@@ -41,6 +41,8 @@ void ChessBoard::make_move(const Move* move)
     board[to_x][to_y] = move->p;
 
     history.push_back(m);
+
+    turn = (turn == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
 }
 
 void ChessBoard::undo_move()
@@ -55,6 +57,7 @@ void ChessBoard::undo_move()
 
     board[from_x][from_y] = m.p;
     board[to_x][to_y] = m.captured;
+    turn = (turn == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
 }
 
 void ChessBoard::load_fen(const std::string& fen)
@@ -113,6 +116,10 @@ void ChessBoard::load_fen(const std::string& fen)
         board[x][y] = p;
         x++;
     }
+
+    std::string turn;
+    ss >> turn;
+    this->turn = (turn == "w") ? PieceColor::WHITE : PieceColor::BLACK;
 
     if (y != 0 || x != 8)
         throw std::runtime_error("Invalid FEN: incomplete board");
@@ -195,7 +202,7 @@ std::vector<Move> ChessBoard::get_pawn_moves(uint8_t x, uint8_t y, ChessPiece p)
                 board[x][y + 1].type == PieceType::NONE &&
                 board[x][y + 2].type == PieceType::NONE)
             {
-                moves.push_back({p, compact_coords(x, y -+ 2), compact_coords(x, y)});
+                moves.push_back({p, compact_coords(x, y + 2), compact_coords(x, y)});
             }
 
         }
@@ -428,7 +435,55 @@ std::vector<Move> ChessBoard::get_king_moves(uint8_t x, uint8_t y, ChessPiece p)
     return moves;
 }
 
-bool ChessBoard::is_check(PieceColor color)
+bool ChessBoard::is_valid_move(const Move* move)
+{
+    // Ensure the "from" square actually has the piece
+    uint8_t from_x = move->from >> 4;
+    uint8_t from_y = move->from & 0x0F;
+    const ChessPiece& p = board[from_x][from_y];
+
+    if (p.type == PieceType::NONE)
+        return false;
+
+    if (p.color != turn)
+        return false;
+
+    // Generate all possible moves for this piece
+    std::vector<Move> possible_moves;
+    switch (p.type)
+    {
+        case PieceType::PAWN:   possible_moves = get_pawn_moves(from_x, from_y, p); break;
+        case PieceType::KNIGHT: possible_moves = get_knight_moves(from_x, from_y, p); break;
+        case PieceType::BISHOP: possible_moves = get_bishop_moves(from_x, from_y, p); break;
+        case PieceType::ROOK:   possible_moves = get_rook_moves(from_x, from_y, p); break;
+        case PieceType::QUEEN:  possible_moves = get_queen_moves(from_x, from_y, p); break;
+        case PieceType::KING:   possible_moves = get_king_moves(from_x, from_y, p); break;
+        default: return false;
+    }
+
+    // Check if the move is among the possible moves
+    bool found = false;
+    for (auto& m : possible_moves)
+    {
+        if (m.to == move->to && m.from == move->from)
+        {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+        return false;
+
+    // Make the move temporarily to check if king is in check
+    make_move(move);
+    bool leaves_king_in_check = is_check();
+    undo_move();
+
+    return !leaves_king_in_check;
+}
+
+bool ChessBoard::is_check()
 {
     int kx = -1, ky = -1;
 
@@ -438,7 +493,7 @@ bool ChessBoard::is_check(PieceColor color)
         int x = i % 8;
         int y = i / 8;
         if (board[x][y].type == PieceType::KING &&
-            board[x][y].color == color)
+            board[x][y].color == turn)
         {
             kx = x;
             ky = y;
@@ -450,7 +505,7 @@ bool ChessBoard::is_check(PieceColor color)
         return false; // no king found (invalid board)
 
     PieceColor enemy =
-        (color == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
+        (turn == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
 
     // Generate enemy moves only
     for (int i = 0; i < 64; ++i)
@@ -484,19 +539,19 @@ bool ChessBoard::is_check(PieceColor color)
     return false;
 }
 
-bool ChessBoard::is_checkmate(PieceColor color)
+bool ChessBoard::is_checkmate()
 {
-    if (!is_check(color))
+    if (!is_check())
         return false;
 
     auto moves = get_moves();
     for (auto& m : moves)
     {
-        if (m.p.color != color)
+        if (m.p.color != turn)
             continue;
 
         make_move(&m);
-        bool still_in_check = is_check(color);
+        bool still_in_check = is_check();
         undo_move();
 
         if (!still_in_check)

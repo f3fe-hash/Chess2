@@ -48,7 +48,6 @@ struct HistoryMove
 
 class ChessBoard
 {
-    ChessPiece board[8][8];
     std::vector<HistoryMove> history;
 
     std::vector<Move> get_pawn_moves(uint8_t x, uint8_t y, ChessPiece p);
@@ -66,9 +65,13 @@ public:
 
     void load_fen(const std::string& FEN);
 
-    bool is_check(PieceColor color);
-    bool is_checkmate(PieceColor color);
+    bool is_check();
+    bool is_checkmate();
+    bool is_valid_move(const Move* move);
     std::vector<Move> get_moves();
 
     void print() const;
+
+    ChessPiece board[8][8];
+    PieceColor turn;
 };
