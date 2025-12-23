@@ -48,7 +48,8 @@ void ChessBoard::make_move(const Move* move)
     // Castling
     if (move->p.type == PieceType::KING)
     {
-        if (from_x == 4 && to_x == 6) { // Kingside
+        if (from_x == 4 && to_x == 6)
+        { // Kingside
             uint8_t rook_from_x = 7;
             uint8_t rook_to_x   = 5;
             uint8_t y = from_y;
@@ -65,7 +66,8 @@ void ChessBoard::make_move(const Move* move)
             if (move->p.color == PieceColor::WHITE) white_kingside_rook_moved = true;
             else black_kingside_rook_moved = true;
         }
-        else if (from_x == 4 && to_x == 2) { // Queenside
+        else if (from_x == 4 && to_x == 2)
+        { // Queenside
             uint8_t rook_from_x = 0;
             uint8_t rook_to_x   = 3;
             uint8_t y = from_y;
@@ -81,7 +83,25 @@ void ChessBoard::make_move(const Move* move)
             else black_queenside_rook_moved = true;
         }
     }
-
+    else if (move->p.type == PieceType::PAWN)
+    {
+        if (move->p.color == PieceColor::WHITE)
+        {
+            if (to_y == 7)
+            {
+                board[to_x][to_y].type = PieceType::QUEEN;
+                board[to_x][to_y].color = PieceColor::WHITE;
+            }
+        }
+        else if (move->p.color == PieceColor::BLACK)
+        {
+            if (to_y == 0)
+            {
+                board[to_x][to_y].type = PieceType::QUEEN;
+                board[to_x][to_y].color = PieceColor::BLACK;
+            }
+        }
+    }
 
     history.push_back(m);
 
