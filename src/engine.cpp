@@ -167,6 +167,10 @@ Move ChessEngine::search(const ChessBoard* position, int depth)
     float best_score = -1e9f;
 
     auto moves = board.get_moves();
+    if (moves.empty())
+    {
+        return Move{}; // or throw, or mark as resign
+    }
     for (auto& m : moves)
     {
         if (m.p.color != position->turn)

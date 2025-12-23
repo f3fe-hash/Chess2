@@ -41,6 +41,13 @@ void ChessBoard::make_move(const Move* move)
     m.p    = move->p;
     m.captured = board[to_x][to_y];
 
+    // SAVE CASTLING STATE
+    m.white_ks = white_kingside_rook_moved;
+    m.white_qs = white_queenside_rook_moved;
+    m.black_ks = black_kingside_rook_moved;
+    m.black_qs = black_queenside_rook_moved;
+    m.captured_rook_piece.type = PieceType::NONE;
+
     // Move the piece
     board[from_x][from_y].type = PieceType::NONE;
     board[to_x][to_y] = move->p;
@@ -85,21 +92,13 @@ void ChessBoard::make_move(const Move* move)
     }
     else if (move->p.type == PieceType::PAWN)
     {
-        if (move->p.color == PieceColor::WHITE)
+        if ((move->p.color == PieceColor::WHITE && to_y == 7) ||
+            (move->p.color == PieceColor::BLACK && to_y == 0))
         {
-            if (to_y == 7)
-            {
-                board[to_x][to_y].type = PieceType::QUEEN;
-                board[to_x][to_y].color = PieceColor::WHITE;
-            }
-        }
-        else if (move->p.color == PieceColor::BLACK)
-        {
-            if (to_y == 0)
-            {
-                board[to_x][to_y].type = PieceType::QUEEN;
-                board[to_x][to_y].color = PieceColor::BLACK;
-            }
+            m.was_promotion = true;
+
+            board[to_x][to_y].type  = PieceType::QUEEN;
+            board[to_x][to_y].color = move->p.color;
         }
     }
 
@@ -119,6 +118,12 @@ void ChessBoard::undo_move()
     uint8_t from_x = m.from >> 4;
     uint8_t from_y = m.from & 0x0F;
 
+    if (m.was_promotion)
+    {
+        // Remove promoted piece
+        board[to_x][to_y].type = PieceType::NONE;
+    }
+
     // Undo move
     board[from_x][from_y] = m.p;
     board[to_x][to_y] = m.captured;
@@ -126,10 +131,15 @@ void ChessBoard::undo_move()
     // Undo rook move if castling
     if (m.captured_rook_piece.type != PieceType::NONE)
     {
-        uint8_t y = (m.p.color == PieceColor::WHITE) ? 0 : 7;
+        uint8_t y = m.from & 0x0F;
         board[m.captured_rook_from][y] = m.captured_rook_piece;
         board[m.captured_rook_to][y].type = PieceType::NONE;
     }
+
+    white_kingside_rook_moved  = m.white_ks;
+    white_queenside_rook_moved = m.white_qs;
+    black_kingside_rook_moved  = m.black_ks;
+    black_queenside_rook_moved = m.black_qs;
 
     turn = (turn == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
 }
@@ -549,34 +559,57 @@ std::vector<Move> ChessBoard::get_king_moves(uint8_t x, uint8_t y, ChessPiece p)
     return moves;
 }
 
-// will_be_check now only tests the king's destination
+std::vector<uint8_t> ChessBoard::king_attacks(uint8_t x, uint8_t y)
+{
+    std::vector<uint8_t> attacks;
+
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            if (dx == 0 && dy == 0)
+                continue;
+
+            int nx = x + dx;
+            int ny = y + dy;
+
+            if (in_bounds(nx, ny))
+                attacks.push_back(compact_coords(nx, ny));
+        }
+    }
+    return attacks;
+}
+
 bool ChessBoard::will_be_check(const Move* move)
 {
-    // Temporarily make the move
     uint8_t to_x   = move->to >> 4;
     uint8_t to_y   = move->to & 0x0F;
     uint8_t from_x = move->from >> 4;
     uint8_t from_y = move->from & 0x0F;
 
+    // Save board state
     ChessPiece captured = board[to_x][to_y];
-    board[to_x][to_y] = move->p;
-    board[from_x][from_y].type = PieceType::NONE;
+    ChessPiece moved    = board[from_x][from_y];
 
-    // Find the king's position after the move
+    // Make move
+    board[to_x][to_y] = moved;
+    board[from_x][from_y] = { PieceType::NONE, PieceColor::WHITE };
+
+    // Locate king
     int kx = -1, ky = -1;
-    if (move->p.type == PieceType::KING)
+    if (moved.type == PieceType::KING)
     {
         kx = to_x;
         ky = to_y;
     }
     else
     {
-        for (int i = 0; i < 64; i++)
+        for (int i = 0; i < 64; ++i)
         {
             int x = i % 8;
             int y = i / 8;
             if (board[x][y].type == PieceType::KING &&
-                board[x][y].color == move->p.color)
+                board[x][y].color == moved.color)
             {
                 kx = x;
                 ky = y;
@@ -585,43 +618,75 @@ bool ChessBoard::will_be_check(const Move* move)
         }
     }
 
-    PieceColor enemy = (move->p.color == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
-
-    // Check if any enemy attacks the king
     bool in_check = false;
-    for (int i = 0; i < 64; i++)
+    PieceColor enemy =
+        (moved.color == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
+
+    // Scan enemy attacks
+    for (int i = 0; i < 64 && !in_check; ++i)
     {
         int x = i % 8;
         int y = i / 8;
         ChessPiece p = board[x][y];
+
         if (p.type == PieceType::NONE || p.color != enemy)
             continue;
 
-        std::vector<Move> moves;
         switch (p.type)
         {
-            case PieceType::PAWN:   moves = get_pawn_moves(x, y, p); break;
-            case PieceType::KNIGHT: moves = get_knight_moves(x, y, p); break;
-            case PieceType::BISHOP: moves = get_bishop_moves(x, y, p); break;
-            case PieceType::ROOK:   moves = get_rook_moves(x, y, p); break;
-            case PieceType::QUEEN:  moves = get_queen_moves(x, y, p); break;
-            case PieceType::KING:   moves = get_king_moves(x, y, p); break; // safe, pseudo-legal only
-            default: break;
-        }
-
-        for (auto& m : moves)
-        {
-            if (m.to == compact_coords(kx, ky))
+            case PieceType::PAWN:
             {
-                in_check = true;
+                int dir = (p.color == PieceColor::WHITE) ? 1 : -1;
+                for (int dx : {-1, 1})
+                {
+                    int nx = x + dx;
+                    int ny = y + dir;
+                    if (in_bounds(nx, ny) &&
+                        compact_coords(nx, ny) == compact_coords(kx, ky))
+                    {
+                        in_check = true;
+                    }
+                }
+                break;
+            }
+
+            case PieceType::KING:
+            {
+                for (auto sq : king_attacks(x, y))
+                {
+                    if (sq == compact_coords(kx, ky))
+                        in_check = true;
+                }
+                break;
+            }
+
+            default:
+            {
+                std::vector<Move> moves;
+                switch (p.type)
+                {
+                    case PieceType::KNIGHT: moves = get_knight_moves(x, y, p); break;
+                    case PieceType::BISHOP: moves = get_bishop_moves(x, y, p); break;
+                    case PieceType::ROOK:   moves = get_rook_moves(x, y, p); break;
+                    case PieceType::QUEEN:  moves = get_queen_moves(x, y, p); break;
+                    default: break;
+                }
+
+                for (auto& m : moves)
+                {
+                    if (m.to == compact_coords(kx, ky))
+                    {
+                        in_check = true;
+                        break;
+                    }
+                }
                 break;
             }
         }
-        if (in_check) break;
     }
 
-    // Undo move
-    board[from_x][from_y] = move->p;
+    // Undo move (ALWAYS)
+    board[from_x][from_y] = moved;
     board[to_x][to_y] = captured;
 
     return in_check;

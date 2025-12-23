@@ -40,14 +40,20 @@ struct Move
 
 struct HistoryMove
 {
+    uint8_t from, to;
     ChessPiece p;
     ChessPiece captured;
-    uint8_t to;   // (4-bit x)(4-bit y)
-    uint8_t from; // (4-bit x)(4-bit y)
 
+    // Castling
     uint8_t captured_rook_from = 0;
-    uint8_t captured_rook_to = 0;
-    ChessPiece captured_rook_piece = {PieceType::NONE, PieceColor::WHITE};
+    uint8_t captured_rook_to   = 0;
+    ChessPiece captured_rook_piece{PieceType::NONE, PieceColor::WHITE};
+
+    // Castling rights
+    bool white_ks, white_qs, black_ks, black_qs;
+
+    // Promotion
+    bool was_promotion = false;
 };
 
 class ChessBoard
@@ -67,6 +73,7 @@ class ChessBoard
     std::vector<Move> get_rook_moves(uint8_t x, uint8_t y, ChessPiece p);
     std::vector<Move> get_queen_moves(uint8_t x, uint8_t y, ChessPiece p);
     std::vector<Move> get_king_moves(uint8_t x, uint8_t y, ChessPiece p);
+    std::vector<uint8_t> king_attacks(uint8_t x, uint8_t y);
     bool will_be_check(const Move* move);
 
 public:
