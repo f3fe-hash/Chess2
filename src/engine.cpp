@@ -1,10 +1,10 @@
 #include "engine.hpp"
 
 static const float PAWN_VALUE   = 1.00;
-static const float KNIGHT_VALUE = 3.00;
-static const float BISHOP_VALUE = 3.20;
-static const float ROOK_VALUE   = 5.00;
-static const float QUEEN_VALUE  = 9.00;
+static const float KNIGHT_VALUE = 2.93;
+static const float BISHOP_VALUE = 3.00;
+static const float ROOK_VALUE   = 4.56;
+static const float QUEEN_VALUE  = 9.05;
 
 static const int depth = 5;
 

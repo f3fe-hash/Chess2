@@ -73,6 +73,22 @@ int main()
             std::cout << "Engine moves: " << coord_to_alg(m.from) << coord_to_alg(m.to) << "\n";
             board.print();
         }
+        else if (input == "fen")
+        {
+            std::cout << "Enter FEN: ";
+            std::string fen_input;
+            std::getline(std::cin, fen_input);
+
+            try
+            {
+                board.load_fen(fen_input);
+                board.print();
+            }
+            catch (const std::exception& e)
+            {
+                std::cout << "Invalid FEN: " << e.what() << "\n";
+            }
+        }
         else if (input == "eval")
         {
             std::cout << "Engine eval: " << engine.eval(&board) << std::endl;
