@@ -5,6 +5,14 @@ static const float KNIGHT_VALUE = 2.93;
 static const float BISHOP_VALUE = 3.00;
 static const float ROOK_VALUE   = 4.56;
 static const float QUEEN_VALUE  = 9.05;
+static const float KING_VALUE = 1000.0f;
+
+constexpr float MATE_SCORE = 100000.0f; // Score for checkmate
+
+// Interesting move config
+static const float INTERESTING_MOVE_THRESHHOLD = 1.0f; // If interesting score less than this, decrease depth
+static const float CHECK_WEIGHT   = 2.0f;
+static const float CAPTURE_WEIGHT = 0.5f;
 
 static const float BOARD_SCALING = 10.00; // divide table values by this
 static const int depth = 5;
@@ -112,9 +120,9 @@ float ChessEngine::eval(const ChessBoard* position)
                 continue;
 
             // Flip tables for black
-            int ty = (position->turn == PieceColor::WHITE) ? y : 7 - y;
+            int ty = (p.color == PieceColor::WHITE) ? y : 7 - y;
 
-            float value = 0.0f;
+            float value = 0.00f;
             switch (p.type)
             {
                 case PieceType::PAWN:
@@ -143,7 +151,8 @@ float ChessEngine::eval(const ChessBoard* position)
                     break;
 
                 case PieceType::KING:
-                    value = KING_TABLE[x][ty] / BOARD_SCALING;
+                    value = KING_VALUE;
+                    value += KING_TABLE[x][ty] / BOARD_SCALING;
                     break;
 
                 default:
@@ -176,7 +185,14 @@ Move ChessEngine::search(const ChessBoard* position, int depth)
         if (m.p.color != position->turn)
             continue;
 
+        PieceColor us = m.p.color;
+
         board.make_move(&m);
+        if (board.is_check(us))
+        {
+            board.undo_move();
+            continue;
+        }
 
         float score = -negamax(
             &board,
@@ -197,6 +213,35 @@ Move ChessEngine::search(const ChessBoard* position, int depth)
     return best_move;
 }
 
+static inline float is_interesting(
+    ChessBoard* board,
+    const Move& m)
+{
+    float interesting = 0.00f;
+    uint8_t capture_x = (m.to >> 4) & 0x0f;
+    uint8_t capture_y = m.to & 0x0f;
+    ChessPiece captured = board->board[capture_x][capture_y];
+
+    // Captures
+    if (captured.type != PieceType::NONE)
+        interesting += CAPTURE_WEIGHT;
+
+    // Promotions
+    //if (promotion != PieceType::NONE)
+    //    return true;
+
+    // Checks
+    PieceColor them =
+        (m.p.color == PieceColor::WHITE)
+            ? PieceColor::BLACK
+            : PieceColor::WHITE;
+
+    bool gives_check = board->is_check(them);
+
+    interesting += gives_check * CHECK_WEIGHT;
+    return interesting;
+}
+
 float ChessEngine::negamax(
     ChessBoard* board,
     int depth,
@@ -204,24 +249,64 @@ float ChessEngine::negamax(
     float beta)
 {
     if (depth == 0)
-        return eval(board);
-
-    if (board->is_checkmate())
-        return -100000.0f; // losing position
-
-    float best = -1e9f;
-
-    auto moves = board->get_moves();
-    for (auto& m : moves)
     {
-        if (m.p.color != board->turn)
+        float e = eval(board);
+        return (board->turn == PieceColor::WHITE) ? e : -e;
+    }
+
+    PieceColor us = board->turn;
+    bool has_legal = false;
+
+    for (auto& m : board->get_moves())
+    {
+        if (m.p.color != us)
             continue;
 
         board->make_move(&m);
+        if (!board->is_check(us))
+            has_legal = true;
+        board->undo_move();
+
+        if (has_legal)
+            break;
+    }
+
+    if (!has_legal)
+    {
+        if (board->is_check(us))
+            return -MATE_SCORE + depth; // mate sooner is better
+        else
+            return 0.0f; // stalemate
+    }
+
+
+    float best = -1e9f;
+    int move_index = 0;
+    for (auto& m : board->get_moves())
+    {
+        if (m.p.color != us)
+            continue;
+
+        board->make_move(&m);
+        if (board->is_check(us))
+        {
+            board->undo_move();
+            continue;
+        }
+
+        float interesting = is_interesting(board, m);
+
+        int new_depth = depth - 1;
+
+        // Late Move Reduction:
+        if (interesting < INTERESTING_MOVE_THRESHHOLD && depth >= 3 && move_index >= 3)
+        {
+            new_depth -= 1; // reduce by 1 ply
+        }
 
         float score = -negamax(
             board,
-            depth - 1,
+            new_depth,
             -beta,
             -alpha
         );
@@ -232,8 +317,11 @@ float ChessEngine::negamax(
         alpha = std::max(alpha, score);
 
         if (alpha >= beta)
-            break; // beta cutoff
+            break;
+
+        move_index++;
     }
+
 
     return best;
 }

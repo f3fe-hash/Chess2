@@ -764,7 +764,7 @@ bool ChessBoard::is_check(PieceColor c)
         return false; // no king found (invalid board)
 
     PieceColor enemy =
-        (turn == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
+        (c == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
 
     // Generate enemy moves only
     for (int i = 0; i < 64; ++i)
