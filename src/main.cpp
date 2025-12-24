@@ -123,7 +123,7 @@ int main()
             std::cout << (board.turn == PieceColor::WHITE ? "Black wins!\n" : "White wins!\n");
             break;
         }
-        else if (board.is_check())
+        else if (board.is_check(board.turn))
         {
             std::cout << "Check!\n";
         }

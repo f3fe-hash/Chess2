@@ -219,7 +219,7 @@ std::vector<Move> ChessBoard::get_moves()
         uint8_t y = i / 8;
         const ChessPiece p = this->board[x][y];
 
-        if (p.type == PieceType::NONE)
+        if (p.type == PieceType::NONE || p.color != turn)
             continue;
         
         std::vector<Move> m;
@@ -734,13 +734,15 @@ bool ChessBoard::is_valid_move(const Move* move)
 
     // Make the move temporarily to check if king is in check
     make_move(move);
-    bool leaves_king_in_check = is_check();
+    PieceColor mover =
+        (turn == PieceColor::WHITE) ? PieceColor::BLACK : PieceColor::WHITE;
+    bool leaves_king_in_check = is_check(mover);
     undo_move();
 
     return !leaves_king_in_check;
 }
 
-bool ChessBoard::is_check()
+bool ChessBoard::is_check(PieceColor c)
 {
     int kx = -1, ky = -1;
 
@@ -750,7 +752,7 @@ bool ChessBoard::is_check()
         int x = i % 8;
         int y = i / 8;
         if (board[x][y].type == PieceType::KING &&
-            board[x][y].color == turn)
+            board[x][y].color == c)
         {
             kx = x;
             ky = y;
@@ -798,7 +800,7 @@ bool ChessBoard::is_check()
 
 bool ChessBoard::is_checkmate()
 {
-    if (!is_check())
+    if (!is_check(turn))
         return false;
 
     auto moves = get_moves();
@@ -808,7 +810,7 @@ bool ChessBoard::is_checkmate()
             continue;
 
         make_move(&m);
-        bool still_in_check = is_check();
+        bool still_in_check = is_check(turn);
         undo_move();
 
         if (!still_in_check)

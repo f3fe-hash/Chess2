@@ -85,7 +85,7 @@ public:
 
     void load_fen(const std::string& FEN);
 
-    bool is_check();
+    bool is_check(PieceColor c);
     bool is_checkmate();
     bool is_valid_move(const Move* move);
     std::vector<Move> get_moves();
