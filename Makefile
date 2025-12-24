@@ -9,7 +9,7 @@ else
 	OPTS := -Ofast -fno-unroll-loops -Os
 endif
 
-LIBS     := -lm
+LIBS     := -lm -lncurses
 WARN     := -Wall -Wextra
 CXXFLAGS := $(WARN) $(OPTS) $(DEBUG) -std=c++23 -I/usr/include
 CCFLAGS  := $(WARN) $(OPTS) $(DEBUG)            -I/usr/include

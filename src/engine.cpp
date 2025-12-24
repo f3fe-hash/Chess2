@@ -14,6 +14,8 @@ static const float INTERESTING_MOVE_THRESHHOLD = 1.0f; // If interesting score l
 static const float CHECK_WEIGHT   = 2.0f;
 static const float CAPTURE_WEIGHT = 0.5f;
 
+static const int QUIESCENCE_MAX = 3;
+
 static const float BOARD_SCALING = 10.00; // divide table values by this
 static const int depth = 5;
 
@@ -151,9 +153,25 @@ float ChessEngine::eval(const ChessBoard* position)
                     break;
 
                 case PieceType::KING:
+                {
                     value = KING_VALUE;
                     value += KING_TABLE[x][ty] / BOARD_SCALING;
+
+                    int shield = 0;
+                    for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8) continue;
+                        if (position->board[nx][ny].type == PieceType::PAWN &&
+                            position->board[nx][ny].color == p.color)
+                            shield++;
+                    }
+
+                    value += shield * 0.1f;
                     break;
+                }
 
                 default:
                     break;
@@ -167,6 +185,52 @@ float ChessEngine::eval(const ChessBoard* position)
     }
 
     return score;
+}
+
+float ChessEngine::quiescence(ChessBoard* board, float alpha, float beta, int depth)
+{
+    float stand_pat = eval(board);
+    int turn_mul = (board->turn == PieceColor::WHITE) ? 1 : -1;
+    stand_pat *= turn_mul;
+
+    if (depth == 0)
+        return stand_pat;
+
+    if (stand_pat >= beta)
+        return beta;
+    if (stand_pat > alpha)
+        alpha = stand_pat;
+
+    PieceColor us = board->turn;
+
+    for (auto& m : board->get_moves())
+    {
+        if (m.p.color != us)
+            continue;
+
+        // Only captures
+        uint8_t tx = (m.to >> 4) & 0xF;
+        uint8_t ty = m.to & 0xF;
+        if (board->board[tx][ty].type == PieceType::NONE)
+            continue;
+
+        board->make_move(&m);
+        if (board->is_check(us))
+        {
+            board->undo_move();
+            continue;
+        }
+
+        float score = -quiescence(board, -beta, -alpha, depth - 1);
+        board->undo_move();
+
+        if (score >= beta)
+            return beta;
+        if (score > alpha)
+            alpha = score;
+    }
+
+    return alpha;
 }
 
 Move ChessEngine::search(const ChessBoard* position, int depth)
@@ -236,10 +300,32 @@ static inline float is_interesting(
             ? PieceColor::BLACK
             : PieceColor::WHITE;
 
+    board->make_move((Move*)&m);
     bool gives_check = board->is_check(them);
+    board->undo_move();
 
     interesting += gives_check * CHECK_WEIGHT;
     return interesting;
+}
+
+static inline int move_score(ChessBoard* board, const Move& m)
+{
+    int score = 0;
+
+    uint8_t tx = (m.to >> 4) & 0xF;
+    uint8_t ty = m.to & 0xF;
+    ChessPiece cap = board->board[tx][ty];
+
+    // Captures first
+    if (cap.type != PieceType::NONE)
+        score += 1000 + int(cap.type) * 10;
+
+    // Promotions
+    if (m.p.type == PieceType::PAWN &&
+        (ty == 0 || ty == 7))
+        score += 800;
+
+    return score;
 }
 
 float ChessEngine::negamax(
@@ -248,16 +334,15 @@ float ChessEngine::negamax(
     float alpha,
     float beta)
 {
+    const int turn_multiplier = (board->turn == PieceColor::WHITE) ? 1 : -1;
     if (depth == 0)
-    {
-        float e = eval(board);
-        return (board->turn == PieceColor::WHITE) ? e : -e;
-    }
+        return quiescence(board, alpha, beta, QUIESCENCE_MAX);
 
     PieceColor us = board->turn;
-    bool has_legal = false;
+    auto moves = board->get_moves();
 
-    for (auto& m : board->get_moves())
+    bool has_legal = false;
+    for (auto& m : moves)
     {
         if (m.p.color != us)
             continue;
@@ -274,15 +359,19 @@ float ChessEngine::negamax(
     if (!has_legal)
     {
         if (board->is_check(us))
-            return -MATE_SCORE + depth; // mate sooner is better
+            return turn_multiplier * (MATE_SCORE + depth); // mate sooner is better
         else
             return 0.0f; // stalemate
     }
 
-
     float best = -1e9f;
     int move_index = 0;
-    for (auto& m : board->get_moves())
+    std::sort(moves.begin(), moves.end(),
+        [&](const Move& a, const Move& b)
+        {
+            return move_score(board, a) > move_score(board, b);
+        });
+    for (auto& m : moves)
     {
         if (m.p.color != us)
             continue;
